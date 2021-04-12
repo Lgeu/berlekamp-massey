@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<style>
+    body {
+        background-color: #fdfdfd;
+        margin: 12px;
+    }
+    textarea {
+        width: 1000px;
+        height: 100px;
+        max-width: 80%;
+        font-family: "Roboto Mono";
+        font-size: 14px;
+        border-radius: 6px;
+        border-width: 1px;
+    }
+    input {
+        width: 180px;
+        height: 18px;
+        font-family: "Roboto Mono";
+        font-size: 14px;
+        border-radius: 4px;
+        border-width: 1px;
+    }
+    button {
+        background-color: white;
+        border-radius: 4px;
+        border-width: 1px;
+    }
+    .inputSection {
+        background-color: #eaeaea;
+        border-radius: 7px;
+        padding: 7px;
+        padding-top: 0;
+    }
+    .outputSection {
+        background-color: #eaeaea;
+        border-radius: 7px;
+        padding: 7px;
+        padding-top: 0;
+    }
+</style>
+<link href="https://fonts.googleapis.com/css?family=Roboto Mono" rel="stylesheet">
+<title>Berlekamp–Massey algorithm をやるページ</title>
+<h1>Berlekamp–Massey algorithm をやるページ</h1>
+数列を入力するといちばん単純な線形漸化式を見つけて、それを元にその後の項を予想するよ<br>
+まちがってたらごめんね
+<section class="inputSection">
+    <h3>入力</h3>
+    <div>
+        <div style="display: inline-block">
+            mod <input id="inputMod" value="998244353" onchange="inputModChange()" onkeyup="inputModChange()">
+        </div>
+        <div id="modError" style="display: inline-block"></div>
+    </div>
+    <div>
+        数列 <textarea id="inputSequence" onchange="inputSequenceChange()" onkeyup="inputSequenceChange()"></textarea>
+    </div>
+    <div>
+        k <input id="inputN" value="20" onchange="inputNChange()" onkeyup="inputNChange()">
+        <button id="inputNMinus" onclick="inputNDecrement()">-</button>
+        <button id="inputNPlus" onclick="inputNIncrement()">+</button>
+        <div id="nError" style="display: inline-block"></div>
+    </div>
+</section>
+<section class="outputSection">
+    <h3>出力</h3>
+    <div>
+        入力項数 <input id="outputInputSequenceLength">
+    </div>
+    <div>
+        係数列の長さ <input id="outputD">
+        <div id="coefficientsError" style="display: inline-block"></div>
+    </div>
+    <div>
+        係数 <textarea id="outputCoefficients"></textarea>
+    </div>
+    <div>
+        続く項 <textarea id="outputSequence"></textarea>
+    </div>
+    <div>
+        第 k 項 <input id="outputNthValue">
+    </div>
+</section>
+
+<script>
+    // javascript なにもわからない
+
+    if (!Number.MAX_SAFE_INTEGER) {
+        Number.MAX_SAFE_INTEGER = 9007199254740991; // Math.pow(2, 53) - 1;
+    }
+    const inputModElement = document.getElementById("inputMod");
+    const inputSequenceElement = document.getElementById("inputSequence");
+    const modErrorElement = document.getElementById("modError");
+    const nErrorElement = document.getElementById("nError");
+    const inputNElement = document.getElementById("inputN");
+    const outputInputSequenceLengthElement = document.getElementById("outputInputSequenceLength");
+    const outputDElement = document.getElementById("outputD");
+    const outputCoefficientsElement = document.getElementById("outputCoefficients");
+    const outputSequenceElement = document.getElementById("outputSequence");
+    const outputNthValueElement = document.getElementById("outputNthValue");
+    const coefficientsErrorElement = document.getElementById("coefficientsError");
+    inputSequenceElement.innerHTML = "0,1,1,2,3,5,8,13";
+    let inputMod = 998244353;
+    let inputSequence = [];
+    let inputN = 100;
+    let outputCoefficients = [];
+    window.onload = function(){
+        inputModChange();
+        inputSequenceChange();
+        inputNChange();
+        updateOutputAll();
+    }
+
+    function updateOutputAll(){
+        outputInputSequenceLengthElement.value = inputSequence.length;
+        outputCoefficients = berlekampMassey(inputSequence, inputMod);
+        outputDElement.value = outputCoefficients.length;
+        outputCoefficientsElement.innerHTML = outputCoefficients.join(",");
+        coefficientsErrorElement.innerHTML = outputCoefficients.length * 2 <= inputSequence.length ? "" : "係数列と続く項は一意には定まらないよ";
+
+            outputSequenceElement.value = "";
+        for(let i = 0; i < inputSequence.length * 2 + 2; i++){
+            let val = bostanMori(inputSequence, outputCoefficients, i, inputMod);
+            outputSequenceElement.value += val + ",";
+        }
+
+        updateKth();
+    }
+    function updateKth(){
+        outputNthValueElement.value = bostanMori(inputSequence, outputCoefficients, inputN, inputMod);
+    }
+    function calcMod(a, m){
+        return (a % m + m) % m;
+    }
+    function calcModString(a, m){
+        if (a.charAt(0) === "-"){
+            return (m - a.slice(1).split("").reduce((acc, cur) => (acc * 10 + +cur) % m, 0)) % m;
+        }else{
+            return a.split("").reduce((acc, cur) => (acc * 10 + +cur) % m, 0);
+        }
+    }
+    function mulMod(a, b, m){
+        a = calcMod(a, m);
+        b = calcMod(b, m);
+        const bHigh = b >> 16;
+        const bLow = b & 0xffff;
+        return (a * bLow % m + (a * bHigh % m * (1 << 16))) % m;
+    }
+    function powMod(a, n, m){
+        n = calcMod(n, m-1);
+        let res = 1;
+        while(n){
+            if (n & 1) res = mulMod(res, a, m);
+            n >>= 1;
+            a = mulMod(a, a, m);
+        }
+        return res;
+    }
+    function inputModChange(){
+        let m = +inputModElement.value;
+        if (!Number.isInteger(m) || m < 0) {
+            modErrorElement.innerHTML = "だめです 自然数にしてね";
+            return;
+        }
+        if (Math.abs(m) >= 0x80000000) {
+            modErrorElement.innerHTML = "だめです " + 0x80000000 + " 未満にしてね";
+            return;
+        }
+        if (!isPrime(m)){
+            modErrorElement.innerHTML = "だめです 素数にしてね";
+            return;
+        }
+        inputMod = m;
+        modErrorElement.innerHTML = "ok";
+        updateOutputAll();
+    }
+    function inputSequenceChange(){
+        // https://saharan.github.io/progcon/ahc-rating-sim.html を参考にした
+        let ins = inputSequenceElement.value.replace(/[^\-0-9]+/g, " ").trim().split(" ");
+        inputSequence.length = 0;
+        for (const s of ins) {
+            const val = calcModString(s, inputMod);
+            if (!Number.isInteger(val)) continue;
+            inputSequence.push(val)
+        }
+        updateOutputAll();
+    }
+    function stringToUnsignedInt64(s){
+        let resHi = 0, resLo = 0;
+        let baseHi = 0, baseLo = 1;
+        s.split("").reverse().forEach( c => {
+            c = +c;
+            resLo += baseLo * c;
+            resHi += Math.floor(resLo / 0x100000000) + baseHi * c;
+            resLo %= 0x100000000;
+            baseLo *= 10;
+            baseHi = baseHi * 10 + Math.floor(baseLo / 0x100000000);
+            baseLo %= 0x100000000;
+        });
+        return [resLo, resHi];
+    }
+    function parseUnsignedInt64(val){
+        let lo = val[0], hi = val[1];
+        // 10 進数面倒… 一旦 16 進数で
+        if (hi) return hi.toString(16) + ("00000000" + lo.toString(16)).slice(-8);
+        else return lo.toString(16);
+    }
+    function inputNIncrement(){
+        let s = inputNElement.value.split("").reverse();
+        let all9 = true;
+        for(let i=0; i<s.length; i++){
+            let c = +s[i];
+            if(c === 9) {
+                s[i] = "0";
+            } else {
+                s[i] = String(c + 1);
+                all9 = false;
+                break;
+            }
+        }
+        if (all9) s.push("1");
+        inputNElement.value = s.reverse().join("");
+        inputNChange();
+    }
+    function inputNDecrement(){
+        if (inputNElement.value === "0") return;
+        if (inputNElement.value === "1") {
+            inputNElement.value = "0";
+            inputNChange();
+            return;
+        }
+        let s = inputNElement.value.split("").reverse();
+        for(let i=0; i<s.length; i++){
+            let c = +s[i];
+            if(c === 0) {
+                s[i] = "9";
+            } else {
+                s[i] = String(c - 1);
+                break;
+            }
+        }
+        if(s[s.length-1] === "0") s.pop();
+        inputNElement.value = s.reverse().join("");
+        inputNChange();
+    }
+    function inputNChange(){
+        let n = +inputNElement.value;
+        if (!Number.isFinite(n) || n < 0) {
+            nErrorElement.innerHTML = "だめです 非負整数にしてね";
+            return
+        }
+        if (n >= Math.pow(2, 64)) {
+            nErrorElement.innerHTML = "だめです 2 ^ 64 未満にしてね";
+            return
+        }
+        if (n >= Number.MAX_SAFE_INTEGER) {
+            n = stringToUnsignedInt64(inputNElement.value);
+            console.log(n, parseUnsignedInt64(n));
+        }
+        nErrorElement.innerHTML = "ok";
+        inputN = n;
+        updateKth();
+    }
+    function isPrime(n){
+        // from https://qiita.com/yumarule/items/267b435b578aed7146fc
+        if (n < 2) return false;
+        if (n === 2 || n === 3 || n === 5) return true;
+        if (n % 2 === 0 || n % 3 === 0 || n % 5 === 0) return false;
+        let prime = 7;
+        let step = 4;
+        const limit = Math.sqrt(n);
+        while (prime <= limit) {
+            if (n % prime === 0) return false;
+            prime += step;
+            step = 6 - step;
+        }
+        return true;
+    }
+
+    function berlekampMassey(arr, mod){
+        const n = arr.length;
+        let bs = [1], cs = [1];
+        let numZerosBeforeTopOfBs = 0, y = 1, l = 0;
+        for (let ed=0; ed<n; ed++){
+            numZerosBeforeTopOfBs += 1;
+            let lenCs = cs.length
+            let lenBs = bs.length + numZerosBeforeTopOfBs;
+            let x = cs.reduce((acc, cur, idx) => (acc + mulMod(cur, arr[ed-idx], mod)), 0) % mod;
+            if (x === 0) continue;
+            const freq = mulMod(x, powMod(y, mod-2, mod), mod);
+            if (lenCs < lenBs){
+                if (2 * l <= ed){
+                    let csOld = cs.concat();
+                    for(; lenCs < lenBs; lenCs++) cs.push(0);
+                    bs.forEach((b, idxBs) => {
+                        let idxCs = idxBs + numZerosBeforeTopOfBs;
+                        cs[idxCs] = (mod + cs[idxCs] - mulMod(b, freq, mod)) % mod;
+                    });
+                    bs = csOld;
+                    l = ed + 1 - l;
+                    numZerosBeforeTopOfBs = 0;
+                    y = x;
+                    continue;
+                }
+                for(; lenCs < lenBs; lenCs++) cs.push(0);
+            }
+            bs.forEach((b, idxBs) => {
+                let idxCs = idxBs + numZerosBeforeTopOfBs;
+                cs[idxCs] = (mod + cs[idxCs] - mulMod(b, freq, mod)) % mod;
+            });
+        }
+        return cs.slice(1).map( x => (mod-x) % mod );
+    }
+
+    function bostanMori(as, coefficients, k, mod){
+        // 参考: https://judge.yosupo.jp/submission/37447
+        // k は number か 32 bit ずつ分けた Array
+        // 畳み込みは愚直
+        //console.assert(k <= Number.MAX_SAFE_INTEGER);
+        console.assert((typeof k !== "number") || k >= 0);
+        const conv = (as, bs) => {
+            let res = Array(as.length + bs.length - 1).fill(0);
+            as.forEach( (a, ia) => {
+                bs.forEach( (b, ib) => {
+                    res[ia+ib] = (res[ia+ib] + mulMod(a, b, mod)) % mod;
+                })
+            })
+            return res;
+        };
+        const sub = (as, odd) => {
+            let bs = Array((as.length + !odd) >> 1).fill(0);
+            for(let i=odd; i<as.length; i+=2) bs[i>>1] = as[i];
+            return bs;
+        }
+        let n = coefficients.length;
+        let cs = [1].concat(coefficients.map( c => (mod - c) % mod ));
+        as = as.slice(0, n);
+        while(as.length < n) as.push(0);
+        let bs = conv(as, cs);
+        bs.length = n;
+        let ks = (typeof k === "number") ? [k] : k;
+        ks.forEach( (k, idx, arr) => {
+            for (let j=0; (idx === arr.length-1) ? k : j<32; j++) {
+                let ds = cs.concat();
+                for (let i = 1; i < ds.length; i += 2) ds[i] = (mod - ds[i]) % mod;
+                bs = sub(conv(bs, ds), k % 2);
+                cs = sub(conv(cs, ds), 0);
+                k = Math.floor(k / 2);
+                //console.log("as =", as, "bs = ", bs, "cs =", cs, "ds = ", ds);
+            }
+        });
+        return bs[0];
+    }
+</script>
