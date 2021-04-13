@@ -85,8 +85,7 @@
 
 <h3>不具合情報</h3>
 <ul>
-    <li>数列のところに大きすぎる数 (絶対値が 2^53 以上の数) を入れると結果が不正確になる</li>
-    <li>続く項を計算するところの計算量がヤバイ 雑にやりすぎた</li>
+    <li>不具合はありません 無敵です</li>
 </ul>
 
 <script>
@@ -124,14 +123,15 @@
         outputDElement.value = outputCoefficients.length;
         outputCoefficientsElement.innerHTML = outputCoefficients.join(",");
         coefficientsErrorElement.innerHTML = outputCoefficients.length * 2 <= inputSequence.length ? "" : "係数列と続く項は一意には定まらないよ";
-
-            outputSequenceElement.value = "";
-        for(let i = 0; i < inputSequence.length * 2 + 2; i++){
-            let val = bostanMori(inputSequence, outputCoefficients, i, inputMod);
-            outputSequenceElement.value += val + ",";
-        }
-
+        updateSucceedingTerms();
         updateKth();
+    }
+    function updateSucceedingTerms(){
+        let terms = inputSequence.concat();
+        for(let i = inputSequence.length; i < inputSequence.length * 2 + 2; i++){
+            terms.push(outputCoefficients.reduce( (acc, cur, idx) => (acc + mulMod(cur, terms[i-idx-1], inputMod)) % inputMod, 0 ));
+        }
+        outputSequenceElement.value = terms.join(",");
     }
     function updateKth(){
         outputNthValueElement.value = bostanMori(inputSequence, outputCoefficients, inputN, inputMod);
