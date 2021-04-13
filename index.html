@@ -151,7 +151,7 @@
         b = calcMod(b, m);
         const bHigh = b >> 16;
         const bLow = b & 0xffff;
-        return (a * bLow % m + (a * bHigh % m * (1 << 16))) % m;
+        return (a * bLow + (a * bHigh % m * (1 << 16))) % m;
     }
     function powMod(a, n, m){
         n = calcMod(n, m-1);
@@ -318,21 +318,108 @@
         }
         return cs.slice(1).map( x => (mod-x) % mod );
     }
-
+    function karatsuba(as, bs, mod){
+        const lenAs = as.length, lenBs = bs.length;
+        const n = lenAs + lenBs - 1;
+        let r = 1;
+        while(r < Math.max(lenAs, lenBs)) r *= 2;
+        while(as.length < r) as.push(0);
+        while(bs.length < r) bs.push(0);
+        const res = Array(r * 4).fill(0);
+        const path = [[0, r, 0]];
+        const L = 0, R = 1, PHASE = 2;
+        while(path.length){
+            const state = path[path.length-1];
+            const c = state[L] + state[R] >> 1;
+            const d = state[R] - state[L];
+            const half = d >> 1;
+            switch (state[PHASE]){
+                case 0:
+                    if (d <= 2){
+                        for(let i=0; i<d; i++){
+                            for(let j=0; j<d; j++){
+                                res[d+d+i+j] += mulMod(as[state[L]+i], bs[state[L]+j], mod);
+                                if(res[d+d+i+j] >= mod) res[d+d+i+j] -= mod;
+                            }
+                        }
+                        path.pop();
+                    } else {
+                        state[PHASE] = 1;
+                        path.push([state[L], c, 0]);
+                    }
+                    break;
+                case 1:
+                    for(let i=d; i<d+d-1; i++){
+                        res[d+i] += res[i];
+                        if(res[d+i] >= mod) res[d+i] -= mod;
+                        res[d+half+i] += res[i];
+                        if(res[d+half+i] >= mod) {res[d+half+i] -= mod;}
+                        res[i] = 0;
+                    }
+                    state[PHASE] = 2;
+                    path.push([c, state[R], 0]);
+                    break;
+                case 2:
+                    for(let i=d; i<d+d-1; i++){
+                        res[d+half+i] += res[i];
+                        if(res[d+half+i] >= mod) res[d+half+i] -= mod;
+                        res[d+d+i] += res[i];
+                        if(res[d+d+i] >= mod) res[d+d+i] -= mod;
+                        res[i] = 0;
+                    }
+                    for(let i=state[L]; i<c; i++){
+                        as[half+i] -= as[i];
+                        if (as[half+i] < 0) as[half+i] += mod;
+                        bs[half+i] -= bs[i];
+                        if (bs[half+i] < 0) bs[half+i] += mod;
+                    }
+                    state[PHASE] = 3;
+                    path.push([c, state[R], 0]);
+                    break;
+                case 3:
+                    for(let i=state[L]; i<c; i++){
+                        as[half+i] += as[i];
+                        if (as[half+i] >= mod) as[half+i] -= mod;
+                        bs[half+i] += bs[i];
+                        if (bs[half+i] >= mod) bs[half+i] -= mod;
+                    }
+                    for(let i=d; i<d+d-1; i++){
+                        res[d+half+i] -= res[i];
+                        if(res[d+half+i] < 0) res[d+half+i] += mod;
+                        res[i] = 0;
+                    }
+                    path.pop();
+            }
+        }
+        as.length = lenAs;
+        bs.length = lenBs;
+        return res.slice(r+r, r+r+n);
+    }
+    function arraysEqual(a, b) {
+        if (a === b) return true;
+        if (a == null || b == null) return false;
+        if (a.length !== b.length) return false;
+        for (let i = 0; i < a.length; ++i) {
+            if (a[i] !== b[i]) return false;
+        }
+        return true;
+    }
     function bostanMori(as, coefficients, k, mod){
         // 参考: https://judge.yosupo.jp/submission/37447
         // k は number か 32 bit ずつ分けた Array
-        // 畳み込みは愚直
-        //console.assert(k <= Number.MAX_SAFE_INTEGER);
         console.assert((typeof k !== "number") || k >= 0);
         const conv = (as, bs) => {
-            let res = Array(as.length + bs.length - 1).fill(0);
-            as.forEach( (a, ia) => {
-                bs.forEach( (b, ib) => {
-                    res[ia+ib] = (res[ia+ib] + mulMod(a, b, mod)) % mod;
+            if (as.length * bs.length <= 8) {
+                let res = Array(as.length + bs.length - 1).fill(0);
+                as.forEach((a, ia) => {
+                    bs.forEach((b, ib) => {
+                        res[ia + ib] = (res[ia + ib] + mulMod(a, b, mod)) % mod;
+                    })
                 })
-            })
-            return res;
+                return res;
+            } else {
+                return karatsuba(as, bs, mod);
+            }
         };
         const sub = (as, odd) => {
             let bs = Array((as.length + !odd) >> 1).fill(0);
